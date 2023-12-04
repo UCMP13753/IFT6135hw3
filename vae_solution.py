@@ -194,12 +194,13 @@ class VAE(nn.Module):
 
     log_likelihood = torch.zeros(x.shape[0], K).to(self.device)
     for i in range(K):
-      z = prior.sample()                        # WRITE CODE HERE (sample from q_phi)
-      recon = self.decode(z)                    # WRITE CODE HERE (decode to conditional distribution) p_\theta(x | z)
-      log_likelihood[:, i] = recon.nll - posterior.nll()     # WRITE CODE HERE (log of the summation terms in approximate log-likelihood, that is, log p_\theta(x, z_i) - log q_\phi(z_i | x))
+      z = prior.sample()
+      z_i = posterior.sample(z)                        # WRITE CODE HERE (sample from q_phi)
+      recon = self.decode(z_i)                    # WRITE CODE HERE (decode to conditional distribution) p_\theta(x | z)
+      log_likelihood[:, i] = recon.nll(x) - posterior.nll(z_i)     # WRITE CODE HERE (log of the summation terms in approximate log-likelihood, that is, log p_\theta(x, z_i) - log q_\phi(z_i | x))
       del z, recon
-
-    ll = None     # WRITE CODE HERE (compute the final log-likelihood using the log-sum-exp trick)
+    print(log_likelihood.shape)
+    ll  = torch.logsumexp(log_likelihood, dim=1) - torch.log(K)     # WRITE CODE HERE (compute the final log-likelihood using the log-sum-exp trick)
     return ll
 
   def forward(self, x, noise=None):
@@ -212,9 +213,11 @@ class VAE(nn.Module):
     #                                         Size: (batch_size,)
     #   KL: The KL Divergence between the variational approximate posterior with N(0, I)
     #       Size: (batch_size,)
-    posterior = None    # WRITE CODE HERE
-    latent_z = None     # WRITE CODE HERE (sample a z)
-    recon = None        # WRITE CODE HERE (decode)
+    posterior = self.encode(x)    # WRITE CODE HERE
+    if noise is None:
+      noise = torch.randn_like(posterior.mode())
+    latent_z = posterior.sample(noise)     # WRITE CODE HERE (sample a z)
+    recon = self.decode(latent_z)        # WRITE CODE HERE (decode)
 
     return recon.mode(), recon.nll(x), posterior.kl()
 
@@ -229,5 +232,5 @@ def interpolate(model, z_1, z_2, n_samples):
   #   sample: The mode of the distribution obtained by decoding each point in the latent space
   #           Should be of size (n_samples, 3, 32, 32)
   lengths = torch.linspace(0., 1., n_samples).unsqueeze(1).to(z_1.device)
-  z = None    # WRITE CODE HERE (interpolate z_1 to z_2 with n_samples points)
+  z = z_1 + lengths * (z_2 - z_1)    # WRITE CODE HERE (interpolate z_1 to z_2 with n_samples points)
   return model.decode(z).mode()
