@@ -26,14 +26,14 @@ def alphas_betas_sequences_helper(beta_start, beta_end, T):
     def linear_beta_schedule(beta_start, beta_end, timesteps):
         return torch.linspace(beta_start, beta_end, timesteps)
 
-    betas = None                             # WRITE CODE HERE: Define the linear beta schedule
-    alphas = None                            # WRITE CODE HERE: Compute the alphas as 1 - betas
-    sqrt_recip_alphas = None                 # WRITE CODE HERE: Returns 1/square_root(\alpha_t)
-    alphas_cumprod = None                    # WRITE CODE HERE: Compute product of alphas up to index t, \bar{\alpha}
-    sqrt_alphas_cumprod = None               # WRITE CODE HERE: Returns sqaure_root(\bar{\alpha}_t)
-    sqrt_one_minus_alphas_cumprod = None     # WRITE CODE HERE: Returns square_root(1 - \bar{\alpha}_t)
-    alphas_cumprod_prev = None               # WRITE CODE HERE: Right shifts \bar{\alpha}_t; with first element as 1.
-    posterior_variance = None                # WRITE CODE HERE: Contains the posterior variances $\tilde{\beta}_t$
+    betas = linear_beta_schedule(beta_start, beta_end, T)                             # WRITE CODE HERE: Define the linear beta schedule
+    alphas = 1 - betas                            # WRITE CODE HERE: Compute the alphas as 1 - betas
+    sqrt_recip_alphas = 1 / torch.sqrt(alphas)                 # WRITE CODE HERE: Returns 1/square_root(\alpha_t)
+    alphas_cumprod = torch.cumprod(alphas, 0)                    # WRITE CODE HERE: Compute product of alphas up to index t, \bar{\alpha}
+    sqrt_alphas_cumprod = torch.sqrt(alphas_cumprod)              # WRITE CODE HERE: Returns sqaure_root(\bar{\alpha}_t)
+    sqrt_one_minus_alphas_cumprod = torch.sqrt(1-alphas_cumprod)     # WRITE CODE HERE: Returns square_root(1 - \bar{\alpha}_t)
+    alphas_cumprod_prev = F.pad(alphas_cumprod[:-1],(1,0),value=1.0)               # WRITE CODE HERE: Right shifts \bar{\alpha}_t; with first element as 1.
+    posterior_variance = betas *(1 - alphas_cumprod_prev)/(1 - alphas_cumprod)                # WRITE CODE HERE: Contains the posterior variances $\tilde{\beta}_t$
 
     return betas, alphas, sqrt_recip_alphas, alphas_cumprod, sqrt_alphas_cumprod, sqrt_one_minus_alphas_cumprod, alphas_cumprod_prev, posterior_variance
 
@@ -53,8 +53,8 @@ def q_sample(x_start, t, coefficients, noise=None):
     if noise is None:
       noise = torch.randn_like(x_start)
 
-    sqrt_alphas_cumprod_t = None           # WRITE CODE HERE: Obtain the cumulative product sqrt_alphas_cumprod up to a given point t in a batched manner for different t's
-    sqrt_one_minus_alphas_cumprod_t = None # WRITE CODE HERE: Same as above, but for sqrt_one_minus_alphas_cumprod
+    sqrt_alphas_cumprod_t = extract(coefficients[0], t, x_start.shape)           # WRITE CODE HERE: Obtain the cumulative product sqrt_alphas_cumprod up to a given point t in a batched manner for different t's
+    sqrt_one_minus_alphas_cumprod_t = extract(coefficients[1], t, x_start.shape) # WRITE CODE HERE: Same as above, but for sqrt_one_minus_alphas_cumprod
 
     x_noisy = None                        # WRITE CODE HERE: Given the above co-efficients and the noise, generate a noisy sample based on q(x_t | x_0)
     
@@ -73,20 +73,21 @@ def p_sample(model, x, t, t_index, coefficients,  noise=None):
     # Returns:
     #   sample: A sample from the distribution p_\theta(x_{t-1} | x_t); mode if t=0
     with torch.no_grad():
-        betas_t = None                         # WRITE CODE HERE: Similar to q_sample, extract betas for specific t's
-        sqrt_one_minus_alphas_cumprod_t = None # WRITE CODE HERE: Same as above, but for sqrt_one_minus_alphas_cumprod
-        sqrt_recip_alphas_t = None            # WRITE CODE HERE: Same as above, but for sqrt_recip_alphas
+        betas_t = extract(coefficients[0], t, x.shape)                         # WRITE CODE HERE: Similar to q_sample, extract betas for specific t's
+        sqrt_one_minus_alphas_cumprod_t = extract(coefficients[1], t, x.shape) # WRITE CODE HERE: Same as above, but for sqrt_one_minus_alphas_cumprod
+        sqrt_recip_alphas_t = extract(coefficients[2], t, x.shape)            # WRITE CODE HERE: Same as above, but for sqrt_recip_alphas
         
-        p_mean = None                         # WRITE CODE HERE: Obtain the mean of the distribution p_\theta(x_{t-1} | x_t)
-
+        p_mean = sqrt_recip_alphas_t * (x - betas_t * model(x,t) / sqrt_one_minus_alphas_cumprod_t)                         # WRITE CODE HERE: Obtain the mean of the distribution p_\theta(x_{t-1} | x_t)
         if t_index == 0:
-            sample = None                       # WRITE CODE HERE: Set the sample as the mode
+            sample = p_mean                       # WRITE CODE HERE: Set the sample as the mode
         else:
-            posterior_variance_t = None         # WRITE CODE HERE: Same as betas_t, but for posterior_variance
+            posterior_variance_t = extract(coefficients[3], t, x.shape)         # WRITE CODE HERE: Same as betas_t, but for posterior_variance
             # WRITE CODE HERE
             # Generate a sample from p_\theta(x_{t-1} | x_t) by generating some noise or if available taking in the noise given
             # Followed by reparameterization to obtain distribution from the mean and variance computed above.
-            pass
+            if noise is None:
+                noise = torch.randn_like(x)
+            sample = p_mean + torch.sqrt(posterior_variance_t) * noise
 
         return sample
 
@@ -105,7 +106,7 @@ def p_sample_loop(model, shape, timesteps, T, coefficients, noise=None):
         imgs = []
         
         for i in tqdm(reversed(range(0, timesteps)), desc='Sampling', total=T, leave=False):
-            img = None # WRITE CODE HERE: Use the p_sample function to denoise from timestep t to timestep t-1
+            img = p_sample(model, img, (torch.ones(b)*i).to(device=model.device, dtype=torch.long), i, coefficients, noise=(noise[i+1] if noise is not None else None)) # WRITE CODE HERE: Use the p_sample function to denoise from timestep t to timestep t-1
             imgs.append(img.cpu())
         
         return torch.stack(imgs)
@@ -120,10 +121,10 @@ def p_losses(denoise_model, x_start, t, coefficients, noise=None):
     #   loss: Loss for training the model
     noise = torch.randn_like(x_start) if noise is None else noise
     
-    x_noisy = None         # WRITE CODE HERE: Obtain the noisy image from the original images x_start, at times t, using the noise noise.
-    predicted_noise = None # WRITE CODE HERE: Obtain the prediction of the noise using the model.
-    
-    loss = None            # WRITE CODE HERE: Compute the huber loss between true noise generated above, and the noise estimate obtained through the model.
+    x_noisy = q_sample(x_start, t, coefficients,noise)         # WRITE CODE HERE: Obtain the noisy image from the original images x_start, at times t, using the noise noise.
+    predicted_noise = denoise_model(x_noisy, t) # WRITE CODE HERE: Obtain the prediction of the noise using the model.
+    criterion = torch.nn.HuberLoss() 
+    loss = criterion(noise, predicted_noise)            # WRITE CODE HERE: Compute the huber loss between true noise generated above, and the noise estimate obtained through the model.
     
     return loss
 
@@ -136,5 +137,5 @@ def t_sample(timesteps, batch_size, device):
     # Returns:
     #   ts: Tensor of size (batch_size,) containing timesteps randomly sampled from 0 to timesteps-1
     
-    ts = None   # WRITE CODE HERE: Randommly sample a tensor of size (batch_size,) where entries are independently sampled from [0, ..., timesteps-1]()
+    ts = torch.randint(0,timesteps, (batch_size,), device=device)   # WRITE CODE HERE: Randommly sample a tensor of size (batch_size,) where entries are independently sampled from [0, ..., timesteps-1]()
     return ts

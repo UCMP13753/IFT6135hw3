@@ -1,4 +1,6 @@
 import torch
+from torch import nn
+
 # Training Hyperparameters
 batch_size = 64   # Batch Size
 z_dim = 32        # Latent Dimensionality
@@ -6,6 +8,62 @@ gen_lr = 1e-4     # Learning Rate for the Generator
 disc_lr = 1e-4    # Learning Rate for the Discriminator
 device = "cuda" if torch.cuda.is_available() else "cpu"
 criterion = torch.nn.BCEWithLogitsLoss()    # WRITE CODE HERE
+image_size = 32
+input_channels = 1
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+
+class Generator(nn.Module):
+    def __init__(self, z_dim, channels, generator_features=32):
+        super(Generator, self).__init__()
+        self.model = nn.Sequential(
+            nn.ConvTranspose2d(z_dim, generator_features * 4, 4, 1, 0, bias=False),
+            nn.BatchNorm2d(generator_features * 4),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(generator_features * 4, generator_features * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(generator_features * 2),
+            nn.ReLU(True),
+            nn.ConvTranspose2d( generator_features * 2, generator_features * 1, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(generator_features * 1),
+            nn.ReLU(True),
+            nn.ConvTranspose2d( generator_features * 1, channels, 4, 2, 1, bias=False),
+            nn.Tanh()
+        )
+
+        self.apply(weights_init)
+
+    def forward(self, input):
+        return self.model(input)
+
+class Discriminator(nn.Module):
+    def __init__(self, channels, discriminator_features=32):
+        super(Discriminator, self).__init__()
+        self.model = nn.Sequential(
+            nn.Conv2d(channels, discriminator_features, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(discriminator_features, discriminator_features * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(discriminator_features * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(discriminator_features * 2, discriminator_features * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(discriminator_features * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(discriminator_features * 4, 1, 4, 1, 0, bias=False),
+        )
+
+        self.apply(weights_init)
+
+    def forward(self, input):
+        return self.model(input)
+
+generator = Generator(z_dim, input_channels).to(device)
+discriminator = Discriminator(input_channels).to(device)
+discriminator_optimizer = torch.optim.Adam(discriminator.parameters(), lr=1e-4, betas=(0.5, 0.999))    # WRITE CODE HERE
+generator_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-4, betas=(0.5, 0.999))        # WRITE CODE HERE
 
 
 def discriminator_train(discriminator, generator, real_samples, fake_samples):
