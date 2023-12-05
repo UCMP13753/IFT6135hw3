@@ -102,13 +102,14 @@ class DiagonalGaussianDistribution(object):
     # Compute the KL-Divergence between the distribution with the standard normal N(0, I)
     # Return: Tensor of size (batch size,) containing the KL-Divergence for each element in the batch
     # https://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
-    kl_div = 0.5 * torch.sum(-self.logvar + self.var + torch.square(self.mean) - 1, axis=-1)       # WRITE CODE HERE
+    kl_div = 0.5 * torch.sum(-self.logvar + self.var + (self.mean)**2- 1, axis=-1)       # WRITE CODE HERE
     return kl_div
 
   def nll(self, sample, dims=[1, 2, 3]):
     # Computes the negative log likelihood of the sample under the given distribution
     # Return: Tensor of size (batch size,) containing the log-likelihood for each element in the batch
     # https://www.statlect.com/glossary/log-likelihood
+
     negative_ll = 0.5 * torch.sum(np.log(2 * np.pi) + self.logvar + ((sample - self.mean) / self.std)**2, dim=dims)    # WRITE CODE HERE
     return negative_ll
 
@@ -197,10 +198,9 @@ class VAE(nn.Module):
       z = prior.sample()
       z_i = posterior.sample(z)                        # WRITE CODE HERE (sample from q_phi)
       recon = self.decode(z_i)                    # WRITE CODE HERE (decode to conditional distribution) p_\theta(x | z)
-      log_likelihood[:, i] = recon.nll(x) - posterior.nll(z_i)     # WRITE CODE HERE (log of the summation terms in approximate log-likelihood, that is, log p_\theta(x, z_i) - log q_\phi(z_i | x))
-      del z, recon
-    print(log_likelihood.shape)
-    ll  = torch.logsumexp(log_likelihood, dim=1) - torch.log(K)     # WRITE CODE HERE (compute the final log-likelihood using the log-sum-exp trick)
+      log_likelihood[:, i] = recon.nll(x, dims=list(range(1,x.dim()))) - posterior.nll(z_i, dims=list(range(1,z_i.dim())))     # WRITE CODE HERE (log of the summation terms in approximate log-likelihood, that is, log p_\theta(x, z_i) - log q_\phi(z_i | x))
+      del z,z_i, recon
+    ll  = torch.logsumexp(log_likelihood, dim=1) - torch.log(torch.tensor(K,dtype=torch.float64)).to(self.device)    # WRITE CODE HERE (compute the final log-likelihood using the log-sum-exp trick)
     return ll
 
   def forward(self, x, noise=None):
