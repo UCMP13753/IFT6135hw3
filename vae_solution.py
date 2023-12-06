@@ -232,5 +232,5 @@ def interpolate(model, z_1, z_2, n_samples):
   #   sample: The mode of the distribution obtained by decoding each point in the latent space
   #           Should be of size (n_samples, 3, 32, 32)
   lengths = torch.linspace(0., 1., n_samples).unsqueeze(1).to(z_1.device)
-  z = z_1 + lengths * (z_2 - z_1)    # WRITE CODE HERE (interpolate z_1 to z_2 with n_samples points)
+  z = lengths * z_1 + (1.0 - lengths) * z_2    # WRITE CODE HERE (interpolate z_1 to z_2 with n_samples points)
   return model.decode(z).mode()

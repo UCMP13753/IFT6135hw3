@@ -124,6 +124,6 @@ def interpolate(generator, z_1, z_2, n_samples):
 
   # WRITE CODE HERE (interpolate z_1 to z_2 with n_samples points and then)
   # WRITE CODE HERE (    generate samples from the respective latents     )
-  lengths = torch.linspace(0., 1., n_samples).unsqueeze(1).to(z_1.device)
-  z = (z_1 + lengths * (z_2 - z_1)).view(n_samples,z_dim,1,1)    # WRITE CODE HERE (interpolate z_1 to z_2 with n_samples points)
+  lengths = torch.linspace(0., 1., n_samples).view(n_samples, 1, 1, 1).to(z_1.device)
+  z = (lengths * z_1 + (1.0 - lengths) * z_2)    # WRITE CODE HERE (interpolate z_1 to z_2 with n_samples points)
   return sample(generator, n_samples, z)

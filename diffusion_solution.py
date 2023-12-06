@@ -25,15 +25,15 @@ def extract(a, t, x_shape):
 def alphas_betas_sequences_helper(beta_start, beta_end, T):
     def linear_beta_schedule(beta_start, beta_end, timesteps):
         return torch.linspace(beta_start, beta_end, timesteps)
-
+    # https://huggingface.co/blog/annotated-diffusion
     betas = linear_beta_schedule(beta_start, beta_end, T)                             # WRITE CODE HERE: Define the linear beta schedule
     alphas = 1 - betas                            # WRITE CODE HERE: Compute the alphas as 1 - betas
     sqrt_recip_alphas = 1 / torch.sqrt(alphas)                 # WRITE CODE HERE: Returns 1/square_root(\alpha_t)
     alphas_cumprod = torch.cumprod(alphas, 0)                    # WRITE CODE HERE: Compute product of alphas up to index t, \bar{\alpha}
     sqrt_alphas_cumprod = torch.sqrt(alphas_cumprod)              # WRITE CODE HERE: Returns sqaure_root(\bar{\alpha}_t)
     sqrt_one_minus_alphas_cumprod = torch.sqrt(1-alphas_cumprod)     # WRITE CODE HERE: Returns square_root(1 - \bar{\alpha}_t)
-    alphas_cumprod_prev = F.pad(alphas_cumprod[:-1],(1,0),value=1.0)               # WRITE CODE HERE: Right shifts \bar{\alpha}_t; with first element as 1.
-    posterior_variance = betas *(1 - alphas_cumprod_prev)/(1 - alphas_cumprod)                # WRITE CODE HERE: Contains the posterior variances $\tilde{\beta}_t$
+    alphas_cumprod_prev = torch.cat((torch.tensor([1], dtype=torch.long), alphas_cumprod[:-1]), dim=0)            # WRITE CODE HERE: Right shifts \bar{\alpha}_t; with first element as 1.
+    posterior_variance = betas *(1 - alphas_cumprod_prev) / (1 - alphas_cumprod)                # WRITE CODE HERE: Contains the posterior variances $\tilde{\beta}_t$
 
     return betas, alphas, sqrt_recip_alphas, alphas_cumprod, sqrt_alphas_cumprod, sqrt_one_minus_alphas_cumprod, alphas_cumprod_prev, posterior_variance
 
@@ -102,14 +102,16 @@ def p_sample_loop(model, shape, timesteps, T, coefficients, noise=None):
     with torch.no_grad():
         b = shape[0]
         # Start from pure noise (x_T)
-        img = torch.randn(shape, device=model.device) if noise is None else noise[0]
+        device = next(model.parameters()).device
+        img = torch.randn(shape, device=device) if noise is None else noise[0]
         imgs = []
         
         for i in tqdm(reversed(range(0, timesteps)), desc='Sampling', total=T, leave=False):
-            img = p_sample(model, img, (torch.ones(b)*i).to(device=model.device, dtype=torch.long), i, coefficients, noise=(noise[i+1] if noise is not None else None)) # WRITE CODE HERE: Use the p_sample function to denoise from timestep t to timestep t-1
+            img = p_sample(model, img, (torch.ones(b)*i).to(device=device, dtype=torch.long), i, coefficients, noise=(noise[i+1] if noise is not None else None)) # WRITE CODE HERE: Use the p_sample function to denoise from timestep t to timestep t-1
             imgs.append(img.cpu())
         
         return torch.stack(imgs)
+
 
 def p_losses(denoise_model, x_start, t, coefficients, noise=None):
     # Returns the loss for training of the denoise model
@@ -137,5 +139,5 @@ def t_sample(timesteps, batch_size, device):
     # Returns:
     #   ts: Tensor of size (batch_size,) containing timesteps randomly sampled from 0 to timesteps-1
     
-    ts = torch.randint(0,timesteps, (batch_size,), device=device)   # WRITE CODE HERE: Randommly sample a tensor of size (batch_size,) where entries are independently sampled from [0, ..., timesteps-1]()
+    ts = torch.randint(0, timesteps, (batch_size,), device=device)   # WRITE CODE HERE: Randommly sample a tensor of size (batch_size,) where entries are independently sampled from [0, ..., timesteps-1]()
     return ts
